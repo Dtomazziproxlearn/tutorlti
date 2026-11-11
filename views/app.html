@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Proximity Learning Chat</title>
+<link rel="icon" href="https://www.proxlearn.com/wp-content/uploads/2026/04/proximity-favicon-300x300.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <img class="logo" src="https://www.proxlearn.com/wp-content/uploads/2026/04/proximity-learning-colored-horizontal-logo.png" alt="Proximity Learning logo" />
+      <div class="header-text">
+        <h1>PLI Student Tutor</h1>
+      </div>
+      <button id="new-chat" type="button" class="new-chat" hidden>+ New chat</button>
+    </header>
+
+    <main id="chat" class="chat">
+      <section id="welcome" class="welcome">
+        <div class="welcome-badge" aria-hidden="true">🎓</div>
+        <h2 id="welcome-title">Hi there! What are we working on today?</h2>
+        <p> Enter a question or pick a topic below to begin your learning adventure!</p>
+        <div class="suggestions">
+          <button type="button" class="chip" data-prompt="Can you help me understand fractions?">➗ Fractions</button>
+          <button type="button" class="chip" data-prompt="I need help starting my writing assignment.">✏️ Writing</button>
+          <button type="button" class="chip" data-prompt="Can you help me with a science question?">🔬 Science</button>
+          <button type="button" class="chip" data-prompt="I'm stuck on a word problem.">🧩 Word problem</button>
+          <button type="button" class="chip" data-prompt="I need help with a world language question.">🌐 World Language</button>
+
+        </div>
+      </section>
+    </main>
+
+    <form id="form" class="composer">
+      <div class="composer-inner">
+        <textarea id="input" placeholder="Ask a question…" rows="1" autofocus></textarea>
+        <button id="send" type="submit" aria-label="Send message">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3.4 20.4 21 12 3.4 3.6l-.01 6.53L15 12 3.39 13.87z" fill="currentColor" />
+          </svg>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <script id="lti-boot" type="application/json">__BOOT_JSON__</script>
+  <script src="/vendor/marked.js"></script>
+  <script src="/vendor/purify.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+# Render Blueprint: the tutor web service plus a Postgres database.
+# In Render: New + → Blueprint → pick this GitHub repo.
+services:
+  - type: web
+    name: student-tutor
+    runtime: node
+    # "free" instances sleep after 15 minutes idle and take ~1 minute to wake,
+    # which shows up as a blank Canvas frame. Use "starter" or higher for classes.
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: student-tutor-db
+          property: connectionString
+      # Secrets: Render asks for these when you create the Blueprint.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: LTI_CLIENT_ID
+        sync: false
+      - key: LTI_PRIVATE_KEY
+        sync: false
+      - key: CLAUDE_MODEL
+        value: claude-sonnet-5
+      - key: CLASSIFIER_MODEL
+        value: claude-haiku-4-5-20251001
+      - key: RATE_LIMIT_PER_15_MIN
+        value: "60"
+      - key: RETENTION_DAYS
+        value: "365"
+
+databases:
+  - name: student-tutor-db
+    databaseName: tutor
+    # Render's free Postgres expires after 30 days; use a paid plan for real use.
+    plan: basic-256mb
+    ipAllowList: []   # only reachable from your Render services
