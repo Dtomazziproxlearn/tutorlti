@@ -6,7 +6,7 @@ services:
     runtime: node
     # "free" instances sleep after 15 minutes idle and take ~1 minute to wake,
     # which shows up as a blank Canvas frame. Use "starter" or higher for classes.
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /healthz
