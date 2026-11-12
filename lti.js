@@ -222,6 +222,9 @@ async function verifyLaunch(body) {
           deploymentId: String(deploymentId),
           contextId: String(context.id),
           canvasCourseId: customValue('canvas_course_id'),
+          // e.g. https://district.instructure.com. Used to read the course's
+          // modules from the Canvas API (canvas.js).
+          canvasApiBase: customValue('canvas_api_base_url'),
           title: trimOrNull(context.title),
           label: trimOrNull(context.label),
           platformName: trimOrNull(platform.name),
@@ -270,6 +273,7 @@ function canvasConfig() {
     custom_fields: {
       canvas_user_id: '$Canvas.user.id',
       canvas_course_id: '$Canvas.course.id',
+      canvas_api_base_url: '$Canvas.api.baseUrl',
     },
   };
 }

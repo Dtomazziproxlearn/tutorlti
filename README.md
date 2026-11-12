@@ -19,8 +19,9 @@ it and push, and the changes apply with no code changes.
 | Rate limit | Per IP (a whole classroom shares one) | Per student |
 | Direct URL | Opens the chat | Shows "open from Canvas"; chat only via launch |
 
-**What the tutor sees:** the student's **first name** and the **course
-title** are added to the system prompt. The tutor never sees the last name,
+**What the tutor sees:** the student's **first name**, the **course
+title**, and the course's **published modules** (see below) are added to
+the system prompt. The tutor never sees the last name,
 email or IDs. Names are stripped to ordinary letters first, so a
 display name can't sneak instructions into the prompt.
 
@@ -28,6 +29,7 @@ display name can't sneak instructions into the prompt.
 
 - `server.js`: Express server: LTI routes, chat API, safety classifier.
 - `lti.js`: LTI 1.3 login, launch verification, key set, Canvas config.
+- `canvas.js`: Reads the course's module outline from the Canvas API.
 - `db/schema.sql`: Tables (created automatically on startup).
 - `db/index.js`: Database queries.
 - `views/app.html`: The chat page, filled in with a session token at launch.
@@ -76,6 +78,54 @@ If a district uses a custom Canvas domain (for example
 `canvas.district.org`), add it to `FRAME_ANCESTORS`, or the browser won't
 show the tutor in their iframe.
 
+### 3. Let the tutor see course modules (optional, recommended)
+
+With this set up, the tutor already knows what's in each module, so a
+student can say "I'm stuck on the Module 3 quiz" without explaining it.
+For each course, the tutor reads module names, item titles and types,
+due dates, and the first ~300 characters of each assignment and quiz
+description. It only reads **published** content, and it saves the list
+for an hour so a whole class launching at once makes one Canvas request.
+No student data is read.
+
+LTI launches can't read the Canvas API on their own, so the tutor uses a
+token from a dedicated Canvas account:
+
+1. **Create the account.** In Canvas, **Admin → People → + People**, add a
+   user such as "Tutor Service Account".
+2. **Give it read-only access.** **Admin → Permissions → Account Roles →
+   + Add Role**, for example "Tutor (read-only)". Turn on only what's needed
+   to view courses and their content (for example **Courses - view list**
+   and **Course Content - view**; names vary slightly between Canvas
+   versions). Then **Admin → Settings → Admins → + Account Admins** and
+   add the account with that role.
+3. **Make the token.** Sign in **as that account** (not via "Act as").
+   **Account → Settings → + New Access Token**, purpose "PLI Tutor".
+   If you set an expiry date, put a reminder on the calendar to replace it.
+4. **In Render**, set `CANVAS_API_BASE_URL` to your Canvas address (for
+   example `https://district.instructure.com`) and `CANVAS_API_TOKEN` to
+   the token.
+5. **Update the Developer Key** so Canvas sends its API address with each
+   launch: open the key, re-enter the config URL (or re-paste the JSON from
+   `/lti/config.json`), and **Save**. If you only use one Canvas, this step
+   is optional.
+
+To check it's working, open the tutor in a course and look at Render's
+**Logs** for `Canvas outline refreshed: course=… chars=…`. A
+`Canvas outline fetch failed … 401/403` line means the token or the role
+permissions are wrong. The chat keeps working either way.
+
+**Canvas beta:** use the beta address
+(`https://district.beta.instructure.com`) as `CANVAS_API_BASE_URL`. Beta is
+copied from production every few weeks, and tokens created in beta are
+erased each time, so create the token in **production** and wait for the
+next beta refresh (or create one in beta and recreate it after each
+refresh).
+
+**Several Canvas instances:** use `CANVAS_API_TOKENS` instead, with
+comma-separated `https://canvas-address=token` pairs. A token is only ever
+sent to the Canvas address it's paired with.
+
 ## Settings
 
 All settings are in `.env.example`. The important ones:
@@ -84,6 +134,9 @@ All settings are in `.env.example`. The important ones:
   this are deleted automatically. Set it to match your district agreements.
 - `RESUME_HOURS` (12): a student returning within this window continues
   their last chat. **+ New chat** starts fresh.
+- `CANVAS_OUTLINE_TTL_MINUTES` (60): how long a course's module list is
+  saved before the tutor re-reads it from Canvas. After a teacher changes a
+  module, it shows up in the tutor within this time.
 - `LTI_DEPLOYMENT_IDS`: optional allowlist, if you want to lock the tool to
   specific installs.
 - `LTI_ISSUER` / `LTI_AUTH_URL` / `LTI_JWKS_URL`: leave the defaults for

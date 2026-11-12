@@ -38,6 +38,34 @@ const check = async (name, fn) => {
   const rogue = await jose.generateKeyPair('RS256');
 
   const claudeCalls = [];
+  const canvasCalls = [];
+  const MOCK = `http://localhost:${MOCK_PORT}`;
+  // Mock Canvas REST API for course 77. Modules are split across two pages,
+  // and include unpublished content the tutor must not see.
+  const canvasApi = {
+    '/api/v1/courses/77': { id: 77, time_zone: 'America/Chicago' },
+    '/api/v1/courses/77/modules?page=1': {
+      next: `${MOCK}/api/v1/courses/77/modules?page=2`,
+      body: [
+        {
+          id: 1, name: 'Module 1: Fractions', published: true,
+          items: [
+            { type: 'SubHeader', title: 'Start here', published: true },
+            { type: 'Page', title: 'What is a fraction?', published: true },
+            { type: 'Assignment', title: 'Fraction worksheet', content_id: 900, published: true, content_details: { due_at: '2026-11-20T23:59:00Z' } },
+            { type: 'Page', title: 'Teacher answer key', published: false },
+          ],
+        },
+        { id: 2, name: 'Module 2: Secret draft', published: false, items: [{ type: 'Page', title: 'Draft page', published: true }] },
+      ],
+    },
+    '/api/v1/courses/77/modules?page=2': {
+      body: [{ id: 3, name: 'Module 3: Decimals', published: true, items_url: `${MOCK}/api/v1/courses/77/modules/3/items` }],
+    },
+    '/api/v1/courses/77/modules/3/items': [{ type: 'Quiz', title: 'Decimals check', content_id: 55, published: true }],
+    '/api/v1/courses/77/assignments': [{ id: 900, description: '<p>Add fractions with <b>like</b> denominators &amp; simplify.</p><script>x()</script>' }],
+    '/api/v1/courses/77/quizzes': [{ id: 55, description: '<p>Five quick questions</p>' }],
+  };
   const mock = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
@@ -45,6 +73,20 @@ const check = async (name, fn) => {
       if (req.url === '/jwks') {
         res.setHeader('Content-Type', 'application/json');
         return res.end(JSON.stringify({ keys: [platformJwk] }));
+      }
+      if (req.url.startsWith('/api/v1/')) {
+        const u = new URL(req.url, MOCK);
+        canvasCalls.push({ path: u.pathname, auth: req.headers.authorization });
+        const page = u.searchParams.get('page');
+        const entry = canvasApi[u.pathname + (u.pathname.endsWith('/modules') ? `?page=${page || 1}` : '')];
+        if (!entry) {
+          res.statusCode = 404;
+          return res.end('{}');
+        }
+        const paged = entry.body !== undefined;
+        if (paged && entry.next) res.setHeader('Link', `<${entry.next}>; rel="next"`);
+        res.setHeader('Content-Type', 'application/json');
+        return res.end(JSON.stringify(paged ? entry.body : entry));
       }
       if (req.url === '/v1/messages') {
         const b = JSON.parse(body);
@@ -81,6 +123,8 @@ const check = async (name, fn) => {
       LTI_CLIENT_ID: CLIENT_ID,
       PUBLIC_BASE_URL: APP,
       RATE_LIMIT_PER_15_MIN: '1000',
+      CANVAS_API_BASE_URL: `http://localhost:${MOCK_PORT}`,
+      CANVAS_API_TOKEN: 'canvas-test-token',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -121,7 +165,7 @@ const check = async (name, fn) => {
       [C + 'roles']: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Learner'],
       [C + 'context']: { id: 'ctx-1', label: 'MATH5', title: 'Grade 5 Math' },
       [C + 'tool_platform']: { guid: 'g', name: 'Test District' },
-      [C + 'custom']: { canvas_user_id: '501', canvas_course_id: '77' },
+      [C + 'custom']: { canvas_user_id: '501', canvas_course_id: '77', canvas_api_base_url: `http://localhost:${MOCK_PORT}` },
       ...overrides,
     };
     return new jose.SignJWT(claims)
@@ -237,6 +281,18 @@ const check = async (name, fn) => {
     assert.match(main.system, /Homework answers/); // CLAUDE.md still included
   });
 
+  await check('system prompt includes the published Canvas module outline', async () => {
+    const main = claudeCalls.find((c) => !c.system.startsWith('You are a safety classifier'));
+    assert.match(main.system, /<course_modules>/);
+    assert.match(main.system, /Module: Module 1: Fractions/);
+    assert.match(main.system, /Start here:/);
+    assert.match(main.system, /\[Page\] What is a fraction\?/);
+    assert.match(main.system, /\[Assignment\] Fraction worksheet \(due Fri, Nov 20, 5:59 PM\) — Add fractions with like denominators & simplify\./);
+    assert.match(main.system, /Module: Module 3: Decimals\n  - \[Quiz\] Decimals check — Five quick questions/); // page 2 + items_url
+    assert.doesNotMatch(main.system, /Secret draft|Draft page|Teacher answer key|<p>|x\(\)/);
+    assert.ok(canvasCalls.length > 0 && canvasCalls.every((c) => c.auth === 'Bearer canvas-test-token'));
+  });
+
   await check('second turn sends full stored history', async () => {
     claudeCalls.length = 0;
     const res = await apiCall(sessionToken, '/api/chat', { conversationId, message: 'What is 1/2 + 1/4?' });
@@ -263,6 +319,30 @@ const check = async (name, fn) => {
     assert.equal(rows[0].n, 1);
     const e = await pg.query('SELECT launch_count FROM enrollments');
     assert.equal(e.rows[0].launch_count, 2);
+  });
+
+  await check('relaunching within the hour reuses the saved outline instead of calling Canvas again', async () => {
+    const before = canvasCalls.length;
+    await fullLaunch({ sub: 'lti-user-uuid-9', given_name: 'Ava' });
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(canvasCalls.length, before);
+  });
+
+  await check('the Canvas token is never sent to a Canvas host it is not configured for', async () => {
+    const C = 'https://purl.imsglobal.org/spec/lti/claim/';
+    const before = canvasCalls.length;
+    const t = await sessionFrom(
+      await fullLaunch({
+        sub: 'other-district-kid',
+        [C + 'context']: { id: 'ctx-2', title: 'Other District Science' },
+        [C + 'custom']: { canvas_course_id: '78', canvas_api_base_url: 'https://other-district.instructure.com' },
+      })
+    );
+    claudeCalls.length = 0;
+    await apiCall(t, '/api/chat', { message: 'hi' });
+    assert.equal(canvasCalls.length, before);
+    const main = claudeCalls.find((c) => !c.system.startsWith('You are a safety classifier'));
+    assert.doesNotMatch(main.system, /course_modules/);
   });
 
   await check("another student can't read or post to Maya's conversation", async () => {

@@ -83,18 +83,23 @@ async function upsertUser(u) {
 
 async function upsertCourse(c) {
   const { rows } = await query(
-    `INSERT INTO courses (issuer, deployment_id, context_id, canvas_course_id, title, label, platform_name)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO courses (issuer, deployment_id, context_id, canvas_course_id, title, label, platform_name, canvas_api_base)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (issuer, deployment_id, context_id) DO UPDATE SET
        canvas_course_id = COALESCE(EXCLUDED.canvas_course_id, courses.canvas_course_id),
        title            = COALESCE(EXCLUDED.title, courses.title),
        label            = COALESCE(EXCLUDED.label, courses.label),
        platform_name    = COALESCE(EXCLUDED.platform_name, courses.platform_name),
+       canvas_api_base  = COALESCE(EXCLUDED.canvas_api_base, courses.canvas_api_base),
        updated_at       = now()
-     RETURNING id`,
-    [c.issuer, c.deploymentId, c.contextId, c.canvasCourseId, c.title, c.label, c.platformName]
+     RETURNING id, canvas_course_id, canvas_api_base, outline_fetched_at`,
+    [c.issuer, c.deploymentId, c.contextId, c.canvasCourseId, c.title, c.label, c.platformName, c.canvasApiBase]
   );
-  return rows[0].id;
+  return rows[0];
+}
+
+async function saveCourseOutline(courseId, outline) {
+  await query('UPDATE courses SET outline = $2, outline_fetched_at = now() WHERE id = $1', [courseId, outline]);
 }
 
 async function recordEnrollment(userId, courseId, roles, isInstructor) {
@@ -125,7 +130,7 @@ async function getSession(token) {
   const { rows } = await query(
     `SELECT s.user_id, s.course_id,
             u.given_name, u.name,
-            c.title AS course_title,
+            c.title AS course_title, c.outline AS course_outline,
             COALESCE(e.is_instructor, false) AS is_instructor
        FROM sessions s
        JOIN users u ON u.id = s.user_id
@@ -231,6 +236,7 @@ module.exports = {
   markNonceUsed,
   upsertUser,
   upsertCourse,
+  saveCourseOutline,
   recordEnrollment,
   createSession,
   getSession,

@@ -108,3 +108,9 @@ CREATE TABLE IF NOT EXISTS flagged_messages (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS flagged_messages_created_idx ON flagged_messages (created_at DESC);
+
+-- Module outline read from the Canvas REST API (canvas.js), cached per course
+-- so a whole class launching at once triggers one Canvas fetch, not thirty.
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS canvas_api_base TEXT;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS outline TEXT;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS outline_fetched_at TIMESTAMPTZ;

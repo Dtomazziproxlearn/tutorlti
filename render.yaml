@@ -23,6 +23,11 @@ services:
         sync: false
       - key: LTI_PRIVATE_KEY
         sync: false
+      # Canvas service account, so the tutor can read course modules.
+      - key: CANVAS_API_BASE_URL
+        sync: false
+      - key: CANVAS_API_TOKEN
+        sync: false
       - key: CLAUDE_MODEL
         value: claude-sonnet-5
       - key: CLASSIFIER_MODEL
