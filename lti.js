@@ -16,9 +16,9 @@ const CLAIM = 'https://purl.imsglobal.org/spec/lti/claim/';
 // Defaults are Canvas Cloud production (any school on *.instructure.com).
 // For a Canvas beta/test environment, or a self-hosted Canvas, override these.
 const config = {
-  issuer: process.env.LTI_ISSUER || 'https://canvas.instructure.com',
-  authUrl: process.env.LTI_AUTH_URL || 'https://sso.canvaslms.com/api/lti/authorize_redirect',
-  jwksUrl: process.env.LTI_JWKS_URL || 'https://sso.canvaslms.com/api/lti/security/jwks',
+  issuer: process.env.LTI_ISSUER || 'https://canvas.beta.instructure.com',
+  authUrl: process.env.LTI_AUTH_URL || 'https://sso.beta.canvaslms.com/api/lti/authorize_redirect',
+  jwksUrl: process.env.LTI_JWKS_URL || 'https://sso.beta.canvaslms.com/api/lti/security/jwks',
   // Each Canvas instance that installs the tool creates its own Developer
   // Key, so allow a comma-separated list of client IDs.
   clientIds: splitList(process.env.LTI_CLIENT_IDS || process.env.LTI_CLIENT_ID),
