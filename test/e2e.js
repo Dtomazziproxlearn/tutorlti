@@ -51,9 +51,9 @@ const check = async (name, fn) => {
           id: 1, name: 'Module 1: Fractions', published: true,
           items: [
             { type: 'SubHeader', title: 'Start here', published: true },
-            { type: 'Page', title: 'What is a fraction?', published: true },
+            { type: 'Page', title: 'What is a fraction?', page_url: 'what-is-a-fraction', published: true },
             { type: 'Assignment', title: 'Fraction worksheet', content_id: 900, published: true, content_details: { due_at: '2026-11-20T23:59:00Z' } },
-            { type: 'Page', title: 'Teacher answer key', published: false },
+            { type: 'Page', title: 'Teacher answer key', page_url: 'answer-key', published: false },
           ],
         },
         { id: 2, name: 'Module 2: Secret draft', published: false, items: [{ type: 'Page', title: 'Draft page', published: true }] },
@@ -65,6 +65,14 @@ const check = async (name, fn) => {
     '/api/v1/courses/77/modules/3/items': [{ type: 'Quiz', title: 'Decimals check', content_id: 55, published: true }],
     '/api/v1/courses/77/assignments': [{ id: 900, description: '<p>Add fractions with <b>like</b> denominators &amp; simplify.</p><script>x()</script>' }],
     '/api/v1/courses/77/quizzes': [{ id: 55, description: '<p>Five quick questions</p>' }],
+    // Full content, read only when the tutor uses a tool.
+    '/api/v1/courses/77/pages/what-is-a-fraction': { published: true, body: '<p>A fraction is part of a <b>whole</b>.</p>' },
+    '/api/v1/courses/77/pages/answer-key': { published: true, body: '<p>ANSWER KEY</p>' },
+    '/api/v1/courses/77/assignments/900': {
+      published: true, points_possible: 10,
+      description: '<p>Add fractions with like denominators.</p>',
+      rubric: [{ description: 'Shows work', points: 5 }],
+    },
   };
   const mock = http.createServer((req, res) => {
     let body = '';
@@ -92,11 +100,31 @@ const check = async (name, fn) => {
         const b = JSON.parse(body);
         claudeCalls.push(b);
         const isClassifier = b.system.startsWith('You are a safety classifier');
+        const last = b.messages[b.messages.length - 1];
+        let content = null;
+        let stop_reason = 'end_turn';
+        if (!isClassifier && b.tools && typeof last.content === 'string' && /explain Module 1/.test(last.content)) {
+          // Act like Claude deciding to read the module before answering.
+          content = [{ type: 'tool_use', id: 'toolu_1', name: 'get_module_content', input: { module: 'Module 1: Fractions' } }];
+          stop_reason = 'tool_use';
+        } else if (!isClassifier && Array.isArray(last.content) && last.content[0]?.type === 'tool_result') {
+          content = [{ type: 'text', text: 'Mock reply after reading the module' }];
+        }
         const text = isClassifier
           ? '{"concerning": false, "category": "none", "reason": "schoolwork"}'
           : `Mock tutor reply #${claudeCalls.length}`;
         res.setHeader('Content-Type', 'application/json');
-        return res.end(JSON.stringify({ model: b.model, content: [{ type: 'text', text }], usage: { input_tokens: 10, output_tokens: 5 } }));
+        return res.end(
+          JSON.stringify({
+            id: `msg_${claudeCalls.length}`,
+            type: 'message',
+            role: 'assistant',
+            model: b.model,
+            content: content || [{ type: 'text', text }],
+            stop_reason,
+            usage: { input_tokens: 10, output_tokens: 5 },
+          })
+        );
       }
       res.statusCode = 404;
       res.end();
@@ -365,6 +393,32 @@ const check = async (name, fn) => {
     );
     const s = await (await apiCall(t, '/api/session')).json();
     assert.equal(s.isInstructor, true);
+  });
+
+  await check('asking to explain a module reads it from Canvas with a tool, and only the reply is stored', async () => {
+    claudeCalls.length = 0;
+    const t = await sessionFrom(await fullLaunch({ sub: 'tool-user', given_name: 'Kai' }));
+    const res = await apiCall(t, '/api/chat', { message: 'Can you explain Module 1?' });
+    const data = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(data));
+    assert.equal(data.text, 'Mock reply after reading the module');
+
+    const main = claudeCalls.filter((c) => !c.system.startsWith('You are a safety classifier'));
+    assert.equal(main.length, 2);
+    assert.deepEqual(main[0].tools.map((x) => x.name), ['get_module_content', 'get_page', 'get_assignment']);
+    assert.match(main[0].system, /## Reading course content/);
+    assert.deepEqual(main[0].cache_control, { type: 'ephemeral' });
+    const result = main[1].messages[main[1].messages.length - 1].content[0];
+    assert.equal(result.tool_use_id, 'toolu_1');
+    assert.match(result.content, /A fraction is part of a whole\./);
+    assert.match(result.content, /- Shows work \(5 pts\)/);
+    assert.doesNotMatch(result.content, /ANSWER KEY|Teacher answer key/);
+    assert.ok(!canvasCalls.some((c) => c.path.endsWith('/pages/answer-key')));
+    assert.ok(canvasCalls.filter((c) => c.path.startsWith('/api/v1/courses/77/')).every((c) => c.auth === 'Bearer canvas-test-token'));
+
+    const s = await (await apiCall(t, '/api/session')).json();
+    assert.deepEqual(s.messages.map((m) => m.role), ['user', 'assistant']);
+    assert.doesNotMatch(s.messages[1].content, /A fraction is part/);
   });
 
   await check('bare URL shows "open from Canvas" page, not the app', async () => {

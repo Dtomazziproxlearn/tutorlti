@@ -21,7 +21,8 @@ it and push, and the changes apply with no code changes.
 
 **What the tutor sees:** the student's **first name**, the **course
 title**, and the course's **published modules** (see below) are added to
-the system prompt. The tutor never sees the last name,
+the system prompt. When a student asks about something specific, the tutor
+can also read that module, page or assignment from Canvas. The tutor never sees the last name,
 email or IDs. Names are stripped to ordinary letters first, so a
 display name can't sneak instructions into the prompt.
 
@@ -29,7 +30,8 @@ display name can't sneak instructions into the prompt.
 
 - `server.js`: Express server: LTI routes, chat API, safety classifier.
 - `lti.js`: LTI 1.3 login, launch verification, key set, Canvas config.
-- `canvas.js`: Reads the course's module outline from the Canvas API.
+- `canvas.js`: Reads the course's module outline and content from the Canvas API.
+- `tutor-tools.js`: The tools the tutor uses to read course content mid-chat.
 - `db/schema.sql`: Tables (created automatically on startup).
 - `db/index.js`: Database queries.
 - `views/app.html`: The chat page, filled in with a session token at launch.
@@ -87,6 +89,29 @@ due dates, and the first ~300 characters of each assignment and quiz
 description. It only reads **published** content, and it saves the list
 for an hour so a whole class launching at once makes one Canvas request.
 No student data is read.
+
+**Reading full content when needed.** When a student asks something like
+"can you explain Module 3?" or "what does the essay assignment want?",
+the tutor can read the actual content before answering. It has three tools:
+
+| Tool | Reads |
+|---|---|
+| `get_module_content` | Every published item in one module: page text, assignment instructions and rubrics, quiz and discussion instructions |
+| `get_page` | The full text of one page |
+| `get_assignment` | One assignment, quiz or discussion: instructions, points, due date, rubric |
+
+Nothing is fetched until a question needs it. The tutor only picks *which*
+module or item to read; the course always comes from the student's
+launch, so it can't reach other courses. It sees only published items
+inside published modules, never quiz questions, and never files, PDFs or
+external tools. It can make at most 3 lookups per student message.
+Content is cached for an hour, so a class asking about the same module
+makes one set of Canvas requests. Only the tutor's reply is saved in the
+database, not the course content it read.
+
+Render's **Logs** show each lookup as `Tutor tool: get_module_content
+course=… chars=… ms=…`. Keep answer keys in **unpublished** pages: like
+students, the tutor can read anything that's published.
 
 LTI launches can't read the Canvas API on their own, so the tutor uses a
 token from a dedicated Canvas account:

@@ -131,6 +131,7 @@ async function getSession(token) {
     `SELECT s.user_id, s.course_id,
             u.given_name, u.name,
             c.title AS course_title, c.outline AS course_outline,
+            c.canvas_course_id, c.canvas_api_base,
             COALESCE(e.is_instructor, false) AS is_instructor
        FROM sessions s
        JOIN users u ON u.id = s.user_id
